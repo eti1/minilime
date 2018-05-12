@@ -195,6 +195,7 @@ int dev_cleanup(void)
 	if (stream_started)
 	{
 		LMS_StopStream(&sc);
+		stream_started = 0;
 	}
 	printf("Closing device\n");
 	return LMS_Close(device);
@@ -233,7 +234,6 @@ void dev_stream_rx(rx_func_t hdlr)
 		{
 			lms_error();
 		}
-		//printf("Readen %d samples\n", rcv);
 		sample_count += rcv;
 		if (hdlr(buffer, rcv))
 		{

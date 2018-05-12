@@ -85,7 +85,6 @@ int main(int argc, char**argv)
 	double freq, bw, gain, lpf_bw;
 	unsigned chan, osr;
 	bool lpf = false;
-	int optidx = 0;
 	char c;
 	char *filename = (char*)"/tmp/out.iq";
 
@@ -95,7 +94,7 @@ int main(int argc, char**argv)
 	osr = 1;
 	gain = 0.5;
 
-	while ((c = getopt_long(argc, argv, "f:s:g:n:o:d:l:h", long_options, &optidx)) != -1)
+	while ((c = getopt_long(argc, argv, "f:s:g:n:o:d:l:h", long_options, NULL)) != -1)
 	{
 		switch(c)
 		{
@@ -121,13 +120,16 @@ int main(int argc, char**argv)
 		case 'n':
 			num_samples = (unsigned long)strtod(optarg, NULL);
 			break;
-		case '?':
-		case 'h':
+		case '?': case 'h':
 			usage(*argv);
 			break;
 		default:
 			break;
 		}
+	}
+	if(optind != argc)
+	{
+		usage(*argv);
 	}
 
 	if (bw < 0 || osr * bw > 30.72e6 || osr*bw <= 0)
