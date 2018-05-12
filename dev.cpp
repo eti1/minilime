@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <chrono>
 #include <lime/LimeSuite.h>
 #include "dev.h"
 
@@ -13,10 +14,12 @@ using namespace std;
 static lms_device_t* device = NULL; //Device structure, should be initialize to NULL
 static lms_stream_t sc;
 static int stream_started = 0;
+static unsigned long sample_count;
+static chrono::time_point<std::chrono::high_resolution_clock> start_time;
 
 static int lms_error(void)
 {
-	cout << "ERROR:" << LMS_GetLastErrorMessage();
+	cout << "ERROR:" << LMS_GetLastErrorMessage() << "\n";
 	if (device != NULL)
 	{
 		dev_cleanup();
@@ -91,14 +94,16 @@ void dev_get_config(void)
 	}
 }
 
-int dev_setup_rx(float freq, float bw, unsigned chan=0, unsigned osr=1, bool lpf = true, float gain = 0.7)
+int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, bool lpf = true, double gain = 0.7)
 {
 	size_t ant_idx;
 
+	printf("Enable channel 0\n");
 	/* Enable channel 0 */
 	if(-1==LMS_EnableChannel(device, LMS_CH_RX, chan, true))
 		lms_error();
 	
+	printf("Configure LO %.3f Mhz\n", freq/1e6);
 	/* Configure LO Frequency */ 
 	if(LMS_SetLOFrequency(device, LMS_CH_RX, chan, freq) != 0)
 	{
@@ -111,18 +116,23 @@ int dev_setup_rx(float freq, float bw, unsigned chan=0, unsigned osr=1, bool lpf
 		lms_error();
 	}
 
+	if (LMS_SetLPF(device, LMS_CH_RX, chan, lpf) != 0)
+	{
+		lms_error();
+	}
+
 	if (lpf)
 	{
 		/* Configure Low-Pass Filter */
 		if(	LMS_SetLPFBW(device, LMS_CH_RX, chan, bw) != 0
-		||	LMS_SetLPF(device, LMS_CH_RX, chan, true) != 0
 		){
 			lms_error();
 		}
 	}
 
 	/* Configure antenna path (FIXME ?)*/
-	ant_idx = (freq > 2e9) ? 2 : 1;
+	ant_idx = (freq > 2e9) ? 3 : 1;
+	printf("Selecting antenna %lu\n", ant_idx);
 	if (LMS_SetAntenna(device, LMS_CH_RX, chan, ant_idx) != 0)
 	{
 		lms_error();
@@ -135,12 +145,10 @@ int dev_setup_rx(float freq, float bw, unsigned chan=0, unsigned osr=1, bool lpf
 	}
 
 	/* Calibrate device */
-#if 1
 	if (LMS_Calibrate(device, LMS_CH_RX, chan, bw, 0) != 0)
 	{
 		lms_error();
 	}
-#endif
 	printf("Device configured\n");
 
 	return 0;
@@ -201,6 +209,8 @@ void dev_stream_rx(rx_func_t hdlr)
 	int rcv;
 	int16_t buffer[2*DEV_BUFCOUNT];
 
+	printf("dev_stream_rx\n");
+
 	sc.channel = 0;							// channel number
 	sc.fifoSize = 1024*1024;				// fifo sample count
 	sc.throughputVsLatency = 1.0;			// Optimize throughput
@@ -217,7 +227,9 @@ void dev_stream_rx(rx_func_t hdlr)
 	{
 		lms_error();
 	}
+	sample_count = 0;
 	stream_started = 1;
+	start_time = chrono::high_resolution_clock::now();
 
 	for(;;)
 	{
@@ -226,8 +238,15 @@ void dev_stream_rx(rx_func_t hdlr)
 			lms_error();
 		}
 		//printf("Readen %d samples\n", rcv);
+		sample_count += rcv;
 		if (hdlr(buffer, rcv))
 		{
+			auto t2 = chrono::high_resolution_clock::now();
+			auto t3 = t2 - start_time;
+			double runtime = (double)(chrono::duration_cast<chrono::microseconds>(t3).count());
+
+			printf("Run time: %.2f sec (%.2f msps) \n",
+				runtime/1e6, (double)sample_count / runtime);
 			LMS_StopStream(&sc);
 			return;
 		}
