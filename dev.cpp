@@ -8,7 +8,8 @@
 #include <lime/LimeSuite.h>
 #include "dev.h"
 
-#define CONF_PATH "limesdr.ini"
+#define CONF_PATH "limesdrmini.ini"
+
 using namespace std;
 
 static lms_device_t* device = NULL; //Device structure, should be initialize to NULL
