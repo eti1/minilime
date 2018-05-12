@@ -94,7 +94,7 @@ void dev_get_config(void)
 	}
 }
 
-int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, bool lpf = true, double gain = 0.7)
+int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double *lpf=NULL, double gain = 0.7)
 {
 	size_t ant_idx;
 
@@ -102,6 +102,7 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, bool l
 	/* Enable channel 0 */
 	if(-1==LMS_EnableChannel(device, LMS_CH_RX, chan, true))
 		lms_error();
+#if 1
 	
 	printf("Configure LO %.3f Mhz\n", freq/1e6);
 	/* Configure LO Frequency */ 
@@ -116,22 +117,22 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, bool l
 		lms_error();
 	}
 
-	if (LMS_SetLPF(device, LMS_CH_RX, chan, lpf) != 0)
+	if (LMS_SetLPF(device, LMS_CH_RX, chan, lpf != NULL) != 0)
 	{
 		lms_error();
 	}
 
-	if (lpf)
+	if (lpf != NULL)
 	{
 		/* Configure Low-Pass Filter */
-		if(	LMS_SetLPFBW(device, LMS_CH_RX, chan, bw) != 0
+		if(	LMS_SetLPFBW(device, LMS_CH_RX, chan, *lpf) != 0
 		){
 			lms_error();
 		}
 	}
 
 	/* Configure antenna path (FIXME ?)*/
-	ant_idx = (freq > 2e9) ? 3 : 1;
+	ant_idx = (freq > 2e9) ? 1 : 3;
 	printf("Selecting antenna %lu\n", ant_idx);
 	if (LMS_SetAntenna(device, LMS_CH_RX, chan, ant_idx) != 0)
 	{
@@ -150,6 +151,7 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, bool l
 		lms_error();
 	}
 	printf("Device configured\n");
+#endif
 
 	return 0;
 }
@@ -177,13 +179,7 @@ int dev_open(void)
 	{
 		lms_error();
 	}
-	if (-1 == stat(CONF_PATH, &st))
-	{
-		printf("Saving config\n");
-		if(0!=LMS_SaveConfig(device, CONF_PATH))
-			lms_error();
-	}
-	else
+	if (-1 != stat(CONF_PATH, &st))
 	{
 		printf("Loading config\n");
 		if (LMS_LoadConfig(device, CONF_PATH) != 0)

@@ -35,7 +35,7 @@ int write_outbuf(int16_t *inp, size_t cnt)
 
 	for (i=0;i<mx;i++)
 	{
-		buf[i] = (float)inp[i];
+		buf[i] = (float)inp[i]/2048. ;
 	}
 	write(out_fd, buf, sizeof(float)*cnt*2);
 
@@ -60,6 +60,9 @@ static struct option long_options[] = {
 	{"output-file",	required_argument, 0, 'o'}, 
 	{"gain",	required_argument, 0, 'g'}, 
 	{"num-samples",	required_argument, 0, 'n'}, 
+	{"lpf-bandwith",	required_argument, 0, 'l'}, 
+	{"decimation",	required_argument, 0, 'd'}, 
+	{"help",	no_argument, 0, 'h'}, 
 };
 
 
@@ -79,23 +82,20 @@ void usage(char*s)
 
 int main(int argc, char**argv)
 {
-	double freq, bw, gain;
+	double freq, bw, gain, lpf_bw;
 	unsigned chan, osr;
+	bool lpf = false;
 	int optidx = 0;
-	bool lpf;
 	char c;
 	char *filename = (char*)"/tmp/out.iq";
 
 	chan = 0;
 	freq = 935e6;
 	bw = 20e6;
-	lpf = 1;
 	osr = 1;
-	if (bw < 15e6)
-		osr = 2;
 	gain = 0.5;
 
-	while ((c = getopt_long(argc, argv, "f:s:g:n:o:", long_options, &optidx)) != -1)
+	while ((c = getopt_long(argc, argv, "f:s:g:n:o:d:l:h", long_options, &optidx)) != -1)
 	{
 		switch(c)
 		{
@@ -111,10 +111,18 @@ int main(int argc, char**argv)
 		case 'g':
 			gain = strtod(optarg, NULL);
 			break;
+		case 'l':
+			lpf_bw = strtod(optarg, NULL);
+			lpf = true;
+			break;
+		case 'd':
+			osr = strtol(optarg, NULL, 10);
+			break;
 		case 'n':
 			num_samples = (unsigned long)strtod(optarg, NULL);
 			break;
 		case '?':
+		case 'h':
 			usage(*argv);
 			break;
 		default:
@@ -122,13 +130,29 @@ int main(int argc, char**argv)
 		}
 	}
 
-	printf("freq: %.f, bw: %.f, o: %s, g: %.f, n: %ld\n",
+	if (bw < 0 || osr * bw > 30.72e6 || osr*bw <= 0)
+	{
+		printf("Invalid samplerate specified\n");
+		return 1;
+	}
+	if (lpf_bw < 0 || lpf_bw > bw)
+	{
+		printf("Invalid low-pass filter bandwidth\n");
+		return 1;
+	}
+	if (freq < 100e6 || freq > 3.8e9)
+	{
+		printf("Frequency not in range 100Mhz-3.8Ghz\n");
+		return 1;
+	}
+
+	printf("freq: %.f, bw: %.f, o: %s, g: %f, n: %ld\n",
 		freq,bw,filename,gain,num_samples);
 
 	signal(2, hdlint);
 	open_out(filename);
 	dev_open();
-	dev_setup_rx(freq, bw, chan, osr, lpf, gain);
+	dev_setup_rx(freq, bw, chan, osr, lpf ? &lpf_bw: NULL, gain);
 	dev_get_config();
 
 	dev_stream_rx(write_outbuf);
