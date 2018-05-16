@@ -8,10 +8,9 @@
 #include <getopt.h>
 #include "dev.h"
 
-using namespace std;
-
 static int out_fd = -1;
 static unsigned long num_samples = 0;
+static bool use_float = false;
 
 void open_out(char *name)
 {
@@ -23,21 +22,12 @@ void open_out(char *name)
 	}
 }
 
-int write_outbuf(int16_t *inp, size_t cnt)
+int write_outbuf(void *inp, size_t cnt)
 {
 	static unsigned long samples_count = 0;
-	static float buf[2*DEV_BUFCOUNT];
-	unsigned mx = DEV_BUFCOUNT*2;
-	size_t i;
+	unsigned sample_size = 2*(use_float?sizeof(float):sizeof(int16_t));
 
-	if (cnt < DEV_BUFCOUNT)
-		mx = 2*cnt;
-
-	for (i=0;i<mx;i++)
-	{
-		buf[i] = (float)inp[i]/2048. ;
-	}
-	write(out_fd, buf, sizeof(float)*cnt*2);
+	write(out_fd, inp, sample_size*cnt);
 
 	if (num_samples != 0 && (samples_count += cnt) >= num_samples)
 	{
@@ -57,11 +47,13 @@ void (hdlint)(int __attribute__((unused)) n)
 static struct option long_options[] = {
 	{"frequency",	required_argument, 0, 'f'}, 
 	{"samplerate",	required_argument, 0, 's'}, 
-	{"output-file",	required_argument, 0, 'o'}, 
 	{"gain",	required_argument, 0, 'g'}, 
 	{"num-samples",	required_argument, 0, 'n'}, 
-	{"lpf-bandwith",	required_argument, 0, 'l'}, 
+	{"output-file",	required_argument, 0, 'o'}, 
 	{"decimation",	required_argument, 0, 'd'}, 
+	{"lpf-bandwith",	required_argument, 0, 'l'}, 
+	{"config-output", required_argument, 0, 'c'}, 
+	{"int16",	no_argument, 0, 'I'}, 
 	{"help",	no_argument, 0, 'h'}, 
 };
 
@@ -87,6 +79,7 @@ int main(int argc, char**argv)
 	bool lpf = false;
 	char c;
 	char *filename = (char*)"/tmp/out.iq";
+	char *conf_path = NULL;
 
 	chan = 0;
 	freq = 935e6;
@@ -94,7 +87,7 @@ int main(int argc, char**argv)
 	osr = 1;
 	gain = 0.5;
 
-	while ((c = getopt_long(argc, argv, "f:s:g:n:o:d:l:h", long_options, NULL)) != -1)
+	while ((c = getopt_long(argc, argv, "f:s:g:n:o:d:l:c:Ih", long_options, NULL)) != -1)
 	{
 		switch(c)
 		{
@@ -117,8 +110,14 @@ int main(int argc, char**argv)
 		case 'd':
 			osr = strtol(optarg, NULL, 10);
 			break;
+		case 'I':
+			use_float = false;
+			break;
 		case 'n':
 			num_samples = (unsigned long)strtod(optarg, NULL);
+			break;
+		case 'c':
+			conf_path = strdup(optarg);
 			break;
 		case '?': case 'h':
 			usage(*argv);
@@ -156,8 +155,14 @@ int main(int argc, char**argv)
 	dev_open();
 	dev_setup_rx(freq, bw, chan, osr, lpf ? &lpf_bw: NULL, gain);
 	dev_get_config();
+	if (conf_path)
+	{
+		dev_save_config(conf_path);
+		printf("Config saved to %s\n", conf_path);
+		free(conf_path);
+	}
 
-	dev_stream_rx(write_outbuf);
+	dev_stream_rx(write_outbuf, use_float);
 	close(out_fd);
 	dev_cleanup();
 

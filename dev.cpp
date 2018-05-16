@@ -118,11 +118,11 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double
 		lms_error();
 	}
 
+	/* Configure low-pass filter */
 	if (LMS_SetLPF(device, LMS_CH_RX, chan, lpf != NULL) != 0)
 	{
 		lms_error();
 	}
-
 	if (lpf != NULL)
 	{
 		/* Configure Low-Pass Filter */
@@ -155,6 +155,11 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double
 #endif
 
 	return 0;
+}
+
+int dev_save_config(char *path)
+{
+	return LMS_SaveConfig(device, path);
 }
 
 int dev_open(void)
@@ -202,10 +207,12 @@ int dev_cleanup(void)
 	return LMS_Close(device);
 }
 
-void dev_stream_rx(rx_func_t hdlr)
+void dev_stream_rx(rx_func_t hdlr, bool use_float)
 {
 	int rcv;
-	int16_t buffer[2*DEV_BUFCOUNT];
+	//float buffer[2*DEV_BUFCOUNT];
+	unsigned sample_size = 2*(use_float?sizeof(float):sizeof(int16_t));
+	void *buffer = malloc(sample_size*DEV_BUFCOUNT);
 
 	printf("dev_stream_rx\n");
 
@@ -213,7 +220,7 @@ void dev_stream_rx(rx_func_t hdlr)
 	sc.fifoSize = 1024*1024;				// fifo sample count
 	sc.throughputVsLatency = 1.0;			// Optimize throughput
 	sc.isTx = false;						// RX channel
-	sc.dataFmt = lms_stream_t::LMS_FMT_I12;	// 12 bit integers
+	sc.dataFmt = use_float ? lms_stream_t::LMS_FMT_F32 : lms_stream_t::LMS_FMT_I12;
 
 	if (LMS_SetupStream(device, &sc) != 0)
 	{
@@ -245,6 +252,7 @@ void dev_stream_rx(rx_func_t hdlr)
 			printf("Run time: %.2f sec (%.2f msps) \n",
 				runtime/1e6, (double)sample_count / runtime);
 			LMS_StopStream(&sc);
+			free(buffer);
 			return;
 		}
 	}
