@@ -10,7 +10,7 @@
 
 static int out_fd = -1;
 static unsigned long num_samples = 0;
-static bool use_float = false;
+static bool use_float = true;
 
 void open_out(char *name)
 {
@@ -54,6 +54,8 @@ static struct option long_options[] = {
 	{"lpf-bandwith",	required_argument, 0, 'l'}, 
 	{"config-output", required_argument, 0, 'c'}, 
 	{"int16",	no_argument, 0, 'I'}, 
+	{"get-config",	no_argument, 0, 'G'}, 
+	{"no-sampling",	no_argument, 0, 'N'}, 
 	{"help",	no_argument, 0, 'h'}, 
 };
 
@@ -78,16 +80,17 @@ int main(int argc, char**argv)
 	unsigned chan, osr;
 	bool lpf = false;
 	char c;
-	char *filename = (char*)"/tmp/out.iq";
+	char *filename = (char*)"/dev/null";
 	char *conf_path = NULL;
+	int get_config = 0, do_sampling = 0;
 
 	chan = 0;
-	freq = 935e6;
-	bw = 20e6;
+	freq = 0;
+	bw = 0;
 	osr = 1;
 	gain = 0.5;
 
-	while ((c = getopt_long(argc, argv, "f:s:g:n:o:d:l:c:Ih", long_options, NULL)) != -1)
+	while ((c = getopt_long(argc, argv, "f:s:g:n:o:d:l:c:IhGN", long_options, NULL)) != -1)
 	{
 		switch(c)
 		{
@@ -114,10 +117,14 @@ int main(int argc, char**argv)
 			use_float = false;
 			break;
 		case 'n':
+			do_sampling = 1;
 			num_samples = (unsigned long)strtod(optarg, NULL);
 			break;
 		case 'c':
 			conf_path = strdup(optarg);
+			break;
+		case 'G':
+			get_config = 1;
 			break;
 		case '?': case 'h':
 			usage(*argv);
@@ -131,7 +138,7 @@ int main(int argc, char**argv)
 		usage(*argv);
 	}
 
-	if (bw < 0 || osr * bw > 30.72e6 || osr*bw <= 0)
+	if (bw < 2.5e6 || osr * bw > 30.72e6 || osr*bw <= 0)
 	{
 		printf("Invalid samplerate specified\n");
 		return 1;
@@ -152,9 +159,14 @@ int main(int argc, char**argv)
 
 	signal(2, hdlint);
 	open_out(filename);
-	dev_open();
+	if (dev_open())
+		goto end;
+
 	dev_setup_rx(freq, bw, chan, osr, lpf ? &lpf_bw: NULL, gain);
-	dev_get_config();
+	if (get_config)
+	{
+		dev_get_config();
+	}
 	if (conf_path)
 	{
 		dev_save_config(conf_path);
@@ -162,7 +174,11 @@ int main(int argc, char**argv)
 		free(conf_path);
 	}
 
-	dev_stream_rx(write_outbuf, use_float);
+	if (do_sampling)
+	{
+		dev_stream_rx(write_outbuf, use_float);
+	}
+end:
 	close(out_fd);
 	dev_cleanup();
 

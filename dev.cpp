@@ -8,7 +8,7 @@
 #include <lime/LimeSuite.h>
 #include "dev.h"
 
-#define CONF_PATH "limesdrmini.ini"
+#define CONF_PATH ".config/limesdrmini.ini"
 
 using namespace std;
 
@@ -166,6 +166,7 @@ int dev_open(void)
 {
 	int n;
 	struct stat st;
+	char *home, path[256];
 
 	lms_info_str_t list[8];
 	if ((n=LMS_GetDeviceList(list)) < 0)
@@ -185,12 +186,20 @@ int dev_open(void)
 	{
 		lms_error();
 	}
-	if (-1 != stat(CONF_PATH, &st))
+	
+	if (!(home = getenv("HOME"))||*home=='\0'
+		||(unsigned)snprintf(path, sizeof(path), "%s/%s", home, CONF_PATH)>=sizeof(path)
+		||-1 == stat(path, &st))
 	{
-		printf("Loading config\n");
-		if (LMS_LoadConfig(device, CONF_PATH) != 0)
-			lms_error();
+		printf("Cannot open config in ~/%s\n", CONF_PATH);
+		return 1;
 	}
+	printf("Loading config\n");
+	if (LMS_LoadConfig(device, path) != 0)
+	{
+		lms_error();
+	}
+
 	printf("Device opened\n");
 	return 0;
 	
@@ -204,7 +213,9 @@ int dev_cleanup(void)
 		stream_started = 0;
 	}
 	printf("Closing device\n");
-	return LMS_Close(device);
+	if (device)
+		 LMS_Close(device);
+	return 0;
 }
 
 void dev_stream_rx(rx_func_t hdlr, bool use_float)
