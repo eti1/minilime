@@ -79,7 +79,7 @@ int main(int argc, char**argv)
 	char *conf_path_out = NULL, *conf_path_in = NULL;
 	int get_config = 0, do_sampling = 0;
 	unsigned do_rx=0, do_tx=0;
-	dev_arg_t rx, tx;
+	dev_arg_t rx, tx, *args;
 
 	while ((c = getopt_long(argc, argv, "hn:o:s:l:IGR:T:", long_options, NULL)) != -1)
 	{
@@ -106,13 +106,22 @@ int main(int argc, char**argv)
 			break;
 		case 'R':case 'T':
 			if(c=='R')
+			{
 				do_rx=1;
+				args=&rx;
+			}
 			else
+			{
 				do_tx=1;
-			if(dev_parse_args(optarg, c=='R'?&rx:&tx))
+				args=&tx;
+			}
+			if(dev_parse_args(optarg, args))
 			{
 				usage(*argv);
 			}
+			
+			printf("%cX args: freq: %.f, bw: %.f, gain: %f, lpf: %f, osr: %d\n",
+				c,args->frequency,args->samplerate,args->gain, args->lpfbw, args->osr);
 			break;
 		case '?': case 'h':
 			usage(*argv);
@@ -136,7 +145,9 @@ int main(int argc, char**argv)
 	if(do_rx)
 		dev_setup_rx(rx.frequency, rx.samplerate, chan, rx.osr, rx.lpfbw ? &rx.lpfbw : NULL, rx.gain);
 	if(do_tx)
+	{
 		dev_setup_tx(tx.frequency, tx.samplerate, chan, tx.osr, tx.lpfbw ? &tx.lpfbw:NULL, tx.gain);
+	}
 
 	if (get_config)
 	{

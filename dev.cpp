@@ -258,7 +258,6 @@ int dev_parse_args(char*str, dev_arg_t *args)
 		val = strtok_r(NULL, DEVARG_SEP2, &saveptr2);
 		if(!(arg&&val))
 			break;
-		printf("%s => %s\n", arg, val);
 		if(!strncmp(arg,"freq",4))
 		{
 			args->frequency = strtod("2402e6", NULL);
@@ -300,8 +299,6 @@ int dev_parse_args(char*str, dev_arg_t *args)
 		printf("Frequency not in range 100Mhz-3.8Ghz\n");
 		return 1;
 	}
-	printf("freq: %.f, bw: %.f, gain: %f, lpf: %f, osr: %d\n",
-		args->frequency,args->samplerate,args->gain, args->lpfbw, args->osr);
 	return 0;
 }
 
