@@ -53,9 +53,9 @@ static struct option long_options[] = {
 	{"decimation",	required_argument, 0, 'd'}, 
 	{"lpf-bandwith",	required_argument, 0, 'l'}, 
 	{"config-output", required_argument, 0, 'c'}, 
+	{"config-input",	no_argument, 0, 'C'}, 
 	{"int16",	no_argument, 0, 'I'}, 
 	{"get-config",	no_argument, 0, 'G'}, 
-	{"no-sampling",	no_argument, 0, 'N'}, 
 	{"help",	no_argument, 0, 'h'}, 
 };
 
@@ -81,8 +81,9 @@ int main(int argc, char**argv)
 	bool lpf = false;
 	char c;
 	char *filename = (char*)"/dev/null";
-	char *conf_path = NULL;
+	char *conf_path_out = NULL, *conf_path_in = NULL;
 	int get_config = 0, do_sampling = 0;
+	unsigned do_rx;
 
 	chan = 0;
 	freq = 0;
@@ -121,7 +122,10 @@ int main(int argc, char**argv)
 			num_samples = (unsigned long)strtod(optarg, NULL);
 			break;
 		case 'c':
-			conf_path = strdup(optarg);
+			conf_path_out = strdup(optarg);
+			break;
+		case 'C':
+			conf_path_in = strdup(optarg);
 			break;
 		case 'G':
 			get_config = 1;
@@ -137,41 +141,47 @@ int main(int argc, char**argv)
 	{
 		usage(*argv);
 	}
-
-	if (bw < 2.5e6 || osr * bw > 30.72e6 || osr*bw <= 0)
+	do_rx = do_sampling || conf_path_out;
+	if (do_rx)
 	{
-		printf("Invalid samplerate specified\n");
-		return 1;
+		if (bw < 2.5e6 || osr * bw > 30.72e6 || osr*bw <= 0)
+		{
+			printf("Invalid samplerate specified\n");
+			return 1;
+		}
+		if (lpf_bw < 0 || lpf_bw > bw)
+		{
+			printf("Invalid low-pass filter bandwidth\n");
+			return 1;
+		}
+		if (freq < 100e6 || freq > 3.8e9)
+		{
+			printf("Frequency not in range 100Mhz-3.8Ghz\n");
+			return 1;
+		}
+		printf("freq: %.f, bw: %.f, o: %s, g: %f, n: %ld\n",
+			freq,bw,filename,gain,num_samples);
 	}
-	if (lpf_bw < 0 || lpf_bw > bw)
-	{
-		printf("Invalid low-pass filter bandwidth\n");
-		return 1;
-	}
-	if (freq < 100e6 || freq > 3.8e9)
-	{
-		printf("Frequency not in range 100Mhz-3.8Ghz\n");
-		return 1;
-	}
-
-	printf("freq: %.f, bw: %.f, o: %s, g: %f, n: %ld\n",
-		freq,bw,filename,gain,num_samples);
 
 	signal(2, hdlint);
-	open_out(filename);
-	if (dev_open())
+	if(do_sampling)
+		open_out(filename);
+
+	if (dev_open(conf_path_in))
 		goto end;
 
-	dev_setup_rx(freq, bw, chan, osr, lpf ? &lpf_bw: NULL, gain);
+	if(do_rx)
+		dev_setup_rx(freq, bw, chan, osr, lpf ? &lpf_bw: NULL, gain);
+
 	if (get_config)
 	{
 		dev_get_config();
 	}
-	if (conf_path)
+	if (conf_path_out)
 	{
-		dev_save_config(conf_path);
-		printf("Config saved to %s\n", conf_path);
-		free(conf_path);
+		dev_save_config(conf_path_out);
+		printf("Config saved to %s\n", conf_path_out);
+		free(conf_path_out);
 	}
 
 	if (do_sampling)
@@ -179,7 +189,8 @@ int main(int argc, char**argv)
 		dev_stream_rx(write_outbuf, use_float);
 	}
 end:
-	close(out_fd);
+	if(do_sampling)
+		close(out_fd);
 	dev_cleanup();
 
 	return 0;

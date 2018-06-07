@@ -99,13 +99,14 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double
 {
 	size_t ant_idx;
 
-	printf("Enable channel 0\n");
+	printf("Enable RX channel 0\n");
+
 	/* Enable channel 0 */
 	if(-1==LMS_EnableChannel(device, LMS_CH_RX, chan, true))
 		lms_error();
 #if 1
 	
-	printf("Configure LO %.3f Mhz\n", freq/1e6);
+	printf("Configure RX LO %.3f Mhz\n", freq/1e6);
 	/* Configure LO Frequency */ 
 	if(LMS_SetLOFrequency(device, LMS_CH_RX, chan, freq) != 0)
 	{
@@ -118,7 +119,7 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double
 		lms_error();
 	}
 
-	/* Configure low-pass filter */
+	/* Configure analog low-pass filter */
 	if (LMS_SetLPF(device, LMS_CH_RX, chan, lpf != NULL) != 0)
 	{
 		lms_error();
@@ -134,7 +135,7 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double
 
 	/* Configure antenna path (FIXME ?)*/
 	ant_idx = (freq > 2e9) ? 1 : 3;
-	printf("Selecting antenna %lu\n", ant_idx);
+	printf("Selecting RX antenna path %lu\n", ant_idx);
 	if (LMS_SetAntenna(device, LMS_CH_RX, chan, ant_idx) != 0)
 	{
 		lms_error();
@@ -157,12 +158,30 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double
 	return 0;
 }
 
+int dev_setup_tx(double freq, double bw, unsigned chan=0, unsigned osr=1, double *lpf=NULL, double gain = 0.7)
+{
+	/* Enable channel 0 */
+	if(-1==LMS_EnableChannel(device, LMS_CH_TX, chan, true))
+		lms_error();
+
+	printf("Configure TX LO %.3f Mhz\n", freq/1e6);
+	/* Configure LO Frequency */ 
+	if(LMS_SetLOFrequency(device, LMS_CH_TX, chan, freq) != 0)
+	{
+		lms_error();
+	}
+
+	/* TODO */
+
+	return 0;
+}
+
 int dev_save_config(char *path)
 {
 	return LMS_SaveConfig(device, path);
 }
 
-int dev_open(void)
+int dev_open(char *conf_path)
 {
 	int n;
 	struct stat st;
@@ -187,15 +206,19 @@ int dev_open(void)
 		lms_error();
 	}
 	
-	if (!(home = getenv("HOME"))||*home=='\0'
-		||(unsigned)snprintf(path, sizeof(path), "%s/%s", home, CONF_PATH)>=sizeof(path)
-		||-1 == stat(path, &st))
+	if (!conf_path)
 	{
-		printf("Cannot open config in ~/%s\n", CONF_PATH);
-		return 1;
+		if (!(home = getenv("HOME"))||*home=='\0'
+			||(unsigned)snprintf(path, sizeof(path), "%s/%s", home, CONF_PATH)>=sizeof(path)
+			||-1 == stat(path, &st))
+		{
+			printf("Cannot open config in ~/%s\n", CONF_PATH);
+			return 1;
+		}
+		conf_path = path;
 	}
 	printf("Loading config\n");
-	if (LMS_LoadConfig(device, path) != 0)
+	if (LMS_LoadConfig(device, conf_path) != 0)
 	{
 		lms_error();
 	}
