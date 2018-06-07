@@ -8,6 +8,10 @@
 #include <getopt.h>
 #include "dev.h"
 
+#ifndef ARRAY_SIZE
+#define ARRAY_SIZE(a) (sizeof(a)/sizeof(*(a)))
+#endif
+
 static int out_fd = -1;
 static unsigned long num_samples = 0;
 static bool use_float = true;
@@ -45,28 +49,21 @@ void (hdlint)(int __attribute__((unused)) n)
 }
 
 static struct option long_options[] = {
-	{"frequency",	required_argument, 0, 'f'}, 
-	{"samplerate",	required_argument, 0, 's'}, 
-	{"gain",	required_argument, 0, 'g'}, 
 	{"num-samples",	required_argument, 0, 'n'}, 
-	{"output-file",	required_argument, 0, 'o'}, 
-	{"decimation",	required_argument, 0, 'd'}, 
-	{"lpf-bandwith",	required_argument, 0, 'l'}, 
-	{"config-output", required_argument, 0, 'c'}, 
-	{"config-input",	no_argument, 0, 'C'}, 
+	{"output-cfile",	required_argument, 0, 'o'}, 
+	{"save-config", required_argument, 0, 's'}, 
+	{"load-config",	no_argument, 0, 'l'}, 
 	{"int16",	no_argument, 0, 'I'}, 
 	{"get-config",	no_argument, 0, 'G'}, 
+	{"rxargs",	no_argument, 0, 'R'}, 
+	{"txargs",	no_argument, 0, 'T'}, 
 	{"help",	no_argument, 0, 'h'}, 
 };
 
-
-#ifndef ARRAY_SIZE
-#define ARRAY_SIZE(a) (sizeof(a)/sizeof(*(a)))
-#endif
 void usage(char*s)
 {
 	unsigned i;
-	printf("Usage: %s [options]\n", s);
+	printf("Usage: %s -R/-T freq=2400e6,sr=10e6,lpf=8e6,osr=1,gain=0.7 [options]\n", s);
 	for(i=0;i<ARRAY_SIZE(long_options);i++)
 	{
 		printf("  -%c --%s\n", long_options[i].val, long_options[i].name);
@@ -76,43 +73,20 @@ void usage(char*s)
 
 int main(int argc, char**argv)
 {
-	double freq, bw, gain, lpf_bw;
-	unsigned chan, osr;
-	bool lpf = false;
+	unsigned chan=0;
 	char c;
 	char *filename = (char*)"/dev/null";
 	char *conf_path_out = NULL, *conf_path_in = NULL;
 	int get_config = 0, do_sampling = 0;
-	unsigned do_rx;
+	unsigned do_rx=0, do_tx=0;
+	dev_arg_t rx, tx;
 
-	chan = 0;
-	freq = 0;
-	bw = 0;
-	osr = 1;
-	gain = 0.5;
-
-	while ((c = getopt_long(argc, argv, "f:s:g:n:o:d:l:c:IhGN", long_options, NULL)) != -1)
+	while ((c = getopt_long(argc, argv, "hn:o:s:l:IGR:T:", long_options, NULL)) != -1)
 	{
 		switch(c)
 		{
-		case 'f':
-			freq = strtod(optarg, NULL);
-			break;
-		case 's':
-			bw = strtod(optarg, NULL);
-			break;
 		case 'o':
 			filename = strdup(optarg);
-			break;
-		case 'g':
-			gain = strtod(optarg, NULL);
-			break;
-		case 'l':
-			lpf_bw = strtod(optarg, NULL);
-			lpf = true;
-			break;
-		case 'd':
-			osr = strtol(optarg, NULL, 10);
 			break;
 		case 'I':
 			use_float = false;
@@ -121,14 +95,24 @@ int main(int argc, char**argv)
 			do_sampling = 1;
 			num_samples = (unsigned long)strtod(optarg, NULL);
 			break;
-		case 'c':
+		case 's':
 			conf_path_out = strdup(optarg);
 			break;
-		case 'C':
+		case 'l':
 			conf_path_in = strdup(optarg);
 			break;
 		case 'G':
 			get_config = 1;
+			break;
+		case 'R':case 'T':
+			if(c=='R')
+				do_rx=1;
+			else
+				do_tx=1;
+			if(dev_parse_args(optarg, c=='R'?&rx:&tx))
+			{
+				usage(*argv);
+			}
 			break;
 		case '?': case 'h':
 			usage(*argv);
@@ -141,27 +125,6 @@ int main(int argc, char**argv)
 	{
 		usage(*argv);
 	}
-	do_rx = do_sampling || conf_path_out;
-	if (do_rx)
-	{
-		if (bw < 2.5e6 || osr * bw > 30.72e6 || osr*bw <= 0)
-		{
-			printf("Invalid samplerate specified\n");
-			return 1;
-		}
-		if (lpf_bw < 0 || lpf_bw > bw)
-		{
-			printf("Invalid low-pass filter bandwidth\n");
-			return 1;
-		}
-		if (freq < 100e6 || freq > 3.8e9)
-		{
-			printf("Frequency not in range 100Mhz-3.8Ghz\n");
-			return 1;
-		}
-		printf("freq: %.f, bw: %.f, o: %s, g: %f, n: %ld\n",
-			freq,bw,filename,gain,num_samples);
-	}
 
 	signal(2, hdlint);
 	if(do_sampling)
@@ -171,7 +134,9 @@ int main(int argc, char**argv)
 		goto end;
 
 	if(do_rx)
-		dev_setup_rx(freq, bw, chan, osr, lpf ? &lpf_bw: NULL, gain);
+		dev_setup_rx(rx.frequency, rx.samplerate, chan, rx.osr, rx.lpfbw ? &rx.lpfbw : NULL, rx.gain);
+	if(do_tx)
+		dev_setup_tx(tx.frequency, tx.samplerate, chan, tx.osr, tx.lpfbw ? &tx.lpfbw:NULL, tx.gain);
 
 	if (get_config)
 	{

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <iostream>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -95,20 +96,20 @@ void dev_get_config(void)
 	}
 }
 
-int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double *lpf=NULL, double gain = 0.7)
+int dev_setup(bool dir_tx, double freq, double bw, unsigned chan=0, unsigned osr=1, double *lpf=NULL, double gain = 0.7)
 {
 	size_t ant_idx;
+	const char *dirstr=dir_tx?"TX":"RX";
 
-	printf("Enable RX channel 0\n");
+	printf("Enable %s channel 0\n", dirstr);
 
 	/* Enable channel 0 */
-	if(-1==LMS_EnableChannel(device, LMS_CH_RX, chan, true))
+	if(-1==LMS_EnableChannel(device, dir_tx, chan, true))
 		lms_error();
-#if 1
 	
-	printf("Configure RX LO %.3f Mhz\n", freq/1e6);
+	printf("Configure %s LO %.3f Mhz\n", dirstr, freq/1e6);
 	/* Configure LO Frequency */ 
-	if(LMS_SetLOFrequency(device, LMS_CH_RX, chan, freq) != 0)
+	if(LMS_SetLOFrequency(device, dir_tx, chan, freq) != 0)
 	{
 		lms_error();
 	}
@@ -120,60 +121,58 @@ int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double
 	}
 
 	/* Configure analog low-pass filter */
-	if (LMS_SetLPF(device, LMS_CH_RX, chan, lpf != NULL) != 0)
+	if (LMS_SetLPF(device, dir_tx, chan, lpf != NULL) != 0)
 	{
 		lms_error();
 	}
 	if (lpf != NULL)
 	{
 		/* Configure Low-Pass Filter */
-		if(	LMS_SetLPFBW(device, LMS_CH_RX, chan, *lpf) != 0
+		if(	LMS_SetLPFBW(device, dir_tx, chan, *lpf) != 0
 		){
 			lms_error();
 		}
 	}
 
 	/* Configure antenna path (FIXME ?)*/
-	ant_idx = (freq > 2e9) ? 1 : 3;
-	printf("Selecting RX antenna path %lu\n", ant_idx);
-	if (LMS_SetAntenna(device, LMS_CH_RX, chan, ant_idx) != 0)
+	if (dir_tx)
+	{
+		ant_idx = (freq > 2e9) ? 1 : 2;
+	}
+	else
+	{
+		ant_idx = (freq > 1e9) ? 1 : 3;
+	}
+	printf("Selecting %s antenna path %lu\n", dirstr, ant_idx);
+	if (LMS_SetAntenna(device, dir_tx, chan, ant_idx) != 0)
 	{
 		lms_error();
 	}
 
 	/* Configure gain */
-	if (LMS_SetNormalizedGain(device, LMS_CH_RX, chan, gain) != 0)
+	if (LMS_SetNormalizedGain(device, dir_tx, chan, gain) != 0)
 	{
 		lms_error();
 	}
 
 	/* Calibrate device */
-	if (LMS_Calibrate(device, LMS_CH_RX, chan, bw, 0) != 0)
+	if (LMS_Calibrate(device, dir_tx, chan, bw, 0) != 0)
 	{
 		lms_error();
 	}
-	printf("Device configured\n");
-#endif
+	printf("%s configured\n", dirstr);
 
 	return 0;
 }
 
+int dev_setup_rx(double freq, double bw, unsigned chan=0, unsigned osr=1, double *lpf=NULL, double gain = 0.7)
+{
+	return dev_setup(false, freq, bw, chan, osr, lpf, gain);
+}
+
 int dev_setup_tx(double freq, double bw, unsigned chan=0, unsigned osr=1, double *lpf=NULL, double gain = 0.7)
 {
-	/* Enable channel 0 */
-	if(-1==LMS_EnableChannel(device, LMS_CH_TX, chan, true))
-		lms_error();
-
-	printf("Configure TX LO %.3f Mhz\n", freq/1e6);
-	/* Configure LO Frequency */ 
-	if(LMS_SetLOFrequency(device, LMS_CH_TX, chan, freq) != 0)
-	{
-		lms_error();
-	}
-
-	/* TODO */
-
-	return 0;
+	return dev_setup(true, freq, bw, chan, osr, lpf, gain);
 }
 
 int dev_save_config(char *path)
@@ -217,7 +216,7 @@ int dev_open(char *conf_path)
 		}
 		conf_path = path;
 	}
-	printf("Loading config\n");
+	printf("Loading config '%s'\n", conf_path);
 	if (LMS_LoadConfig(device, conf_path) != 0)
 	{
 		lms_error();
@@ -238,6 +237,71 @@ int dev_cleanup(void)
 	printf("Closing device\n");
 	if (device)
 		 LMS_Close(device);
+	return 0;
+}
+
+int dev_parse_args(char*str, dev_arg_t *args)
+{
+	char *str1, *str2, *saveptr1, *saveptr2;
+	char *token, *arg, *val;
+
+	memset(args, 0, sizeof(*args));
+	args->osr = 1;
+	args->gain = 0.5;
+
+	for (str1 = str; ; str1 = NULL)
+	{
+		if(!(token = strtok_r(str1, DEVARG_SEP1, &saveptr1)))
+			break;
+		str2 = token;
+		arg = strtok_r(str2, DEVARG_SEP2, &saveptr2);
+		val = strtok_r(NULL, DEVARG_SEP2, &saveptr2);
+		if(!(arg&&val))
+			break;
+		printf("%s => %s\n", arg, val);
+		if(!strncmp(arg,"freq",4))
+		{
+			args->frequency = strtod("2402e6", NULL);
+		}
+		else if(!strncmp(arg,"sr",4))
+		{
+			args->samplerate = strtod(val, NULL);
+		}
+		else if(!strncmp(arg,"lpf",3))
+		{
+			args->lpfbw = strtod(val, NULL);
+		}
+		else if(!strcmp(arg,"gain"))
+		{
+			args->gain = strtod(val, NULL);
+		}
+		else if(!strcmp(arg,"osr"))
+		{
+			args->osr = strtol(val, NULL, 10);
+		}
+		else{
+			printf("Invalid argument %s\n", arg);
+			return 1;
+		}
+	}
+
+	if (args->samplerate < 2.5e6 || args->osr * args->samplerate > 30.72e6 || args->osr*args->samplerate <= 0)
+	{
+		printf("Invalid samplerate %f specified\n", args->samplerate);
+		return 1;
+	}
+	if (args->lpfbw < 0 || args->lpfbw > args->samplerate)
+	{
+		printf("Invalid low-pass filter bandwidth\n");
+		return 1;
+	}
+	if (args->frequency < 100e6 || args->frequency > 3.8e9)
+	{
+		printf("Frequency not in range 100Mhz-3.8Ghz\n");
+		return 1;
+	}
+	printf("freq: %.f, bw: %.f, gain: %f, lpf: %f, osr: %d\n",
+		args->frequency,args->samplerate,args->gain, args->lpfbw, args->osr);
 	return 0;
 }
 
