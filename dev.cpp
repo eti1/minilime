@@ -19,6 +19,8 @@ static int stream_started = 0;
 static unsigned long sample_count;
 static chrono::time_point<std::chrono::high_resolution_clock> start_time;
 
+static double cur_samplerate = 0;
+
 static int lms_error(void)
 {
 	cout << "ERROR:" << LMS_GetLastErrorMessage() << "\n";
@@ -39,9 +41,13 @@ void dev_set_rx_freq(double freq)
 
 void dev_set_samplerate(double sr, size_t oversample=1)
 {
-	if(LMS_SetSampleRate(device, sr, oversample) != 0)
+	if (cur_samplerate != sr)
 	{
-		lms_error();
+		if(LMS_SetSampleRate(device, sr, oversample) != 0)
+		{
+			lms_error();
+		}
+		cur_samplerate = sr;
 	}
 }
 
@@ -96,6 +102,111 @@ void dev_get_config(void)
 	}
 }
 
+int dev_setup_both(dev_arg_t *tx, dev_arg_t *rx)
+{
+	size_t ant_idx;
+	const unsigned chan = 0;
+	printf("Setup both rx & tx\n");
+
+	/* Enable channel 0 RX */
+	if(-1==LMS_EnableChannel(device, false, chan, true))
+		lms_error();
+
+#if (1) // defined(DOTX)
+	/* Enable channel 0 TX */
+	if(-1==LMS_EnableChannel(device, true, chan, true))
+		lms_error();
+#endif
+
+	if(rx->samplerate != tx->samplerate || rx->osr != tx->osr)
+	{
+		printf("Invalid samplerate configuration\n");
+		return 1;
+	}
+	printf("Configure samplerate=%fMhz, osr=%d\n", rx->samplerate, tx->osr);
+
+	/* Configure sample rate*/
+	if(LMS_SetSampleRate(device, rx->samplerate, rx->osr) != 0)
+	{
+		lms_error();
+	}
+
+	/* Configure RX analog low-pass filter */
+	if (LMS_SetLPF(device, false, chan, rx->lpfbw != 0) != 0)
+	{
+		lms_error();
+	}
+	if (rx->lpfbw != 0)
+	{
+		/* Configure Low-Pass Filter */
+		if(	LMS_SetLPFBW(device, false, chan, rx->lpfbw) != 0
+		){
+			lms_error();
+		}
+	}
+
+	/* Configure RX antenna path (FIXME ?)*/
+	ant_idx = (rx->frequency > 1e9) ? 1 : 3;
+	if (LMS_SetAntenna(device, false, chan, ant_idx) != 0)
+	{
+		lms_error();
+	}
+
+#if (1) // defined(DOTX)
+	/* Configure TX antenna path (FIXME ?)*/
+	ant_idx = (tx->frequency > 1e9) ? 1 : 2;
+	if (LMS_SetAntenna(device, true, chan, ant_idx) != 0)
+	{
+		lms_error();
+	}
+#endif
+
+	/* Configure RX gain */
+	if (LMS_SetNormalizedGain(device, false, chan, rx->gain) != 0)
+	{
+		lms_error();
+	}
+
+#if (1) // defined(DOTX)
+	/* Configure TX gain */
+	if (LMS_SetNormalizedGain(device, true, chan, tx->gain) != 0)
+	{
+		lms_error();
+	}
+#endif
+
+
+	printf("Configure RX LO %.3f Mhz\n", rx->frequency/1e6);
+	/* Configure RX LO Frequency */ 
+	if(LMS_SetLOFrequency(device, false, chan, rx->frequency) != 0)
+	{
+		lms_error();
+	}
+	
+#if (1) // defined(DOTX)
+	/* Configure TX LO Frequency */ 
+	printf("Configure TX LO %.3f Mhz\n", tx->frequency/1e6);
+	if(LMS_SetLOFrequency(device, true, chan, tx->frequency) != 0)
+	{
+		lms_error();
+	}
+#endif
+
+	/* Calibrate device */
+	if (LMS_Calibrate(device, false, chan, rx->samplerate, 0) != 0)
+	{
+		lms_error();
+	}
+#if (1) // defined(DOTX)
+	if (LMS_Calibrate(device, true, chan, tx->samplerate, 0) != 0)
+	{
+		lms_error();
+	}
+#endif
+
+	return 0;
+}
+
 int dev_setup(bool dir_tx, double freq, double bw, unsigned chan=0, unsigned osr=1, double *lpf=NULL, double gain = 0.7)
 {
 	size_t ant_idx;
@@ -120,11 +231,6 @@ int dev_setup(bool dir_tx, double freq, double bw, unsigned chan=0, unsigned osr
 		lms_error();
 	}
 
-	/* Configure analog low-pass filter */
-	if (LMS_SetLPF(device, dir_tx, chan, lpf != NULL) != 0)
-	{
-		lms_error();
-	}
 	if (lpf != NULL)
 	{
 		/* Configure Low-Pass Filter */
@@ -132,6 +238,12 @@ int dev_setup(bool dir_tx, double freq, double bw, unsigned chan=0, unsigned osr
 		){
 			lms_error();
 		}
+	}
+
+	/* Configure analog low-pass filter */
+	if (LMS_SetLPF(device, dir_tx, chan, lpf != NULL) != 0)
+	{
+		lms_error();
 	}
 
 	/* Configure antenna path (FIXME ?)*/
@@ -338,6 +450,7 @@ void dev_stream_rx(rx_func_t hdlr, bool use_float)
 			lms_error();
 		}
 		sample_count += rcv;
+	//	LMS_StopStream(&sc);
 		if (hdlr(buffer, rcv))
 		{
 			auto t2 = chrono::high_resolution_clock::now();
@@ -346,9 +459,10 @@ void dev_stream_rx(rx_func_t hdlr, bool use_float)
 
 			printf("Run time: %.2f sec (%.2f msps) \n",
 				runtime/1e6, (double)sample_count / runtime);
-			LMS_StopStream(&sc);
+		//	LMS_StopStream(&sc);
 			free(buffer);
 			return;
 		}
+	//	LMS_StartStream(&sc);
 	}
 }

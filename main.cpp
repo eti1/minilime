@@ -134,6 +134,14 @@ int main(int argc, char**argv)
 	{
 		usage(*argv);
 	}
+	if(do_tx&&do_rx)
+	{
+		if (tx.samplerate != rx.samplerate)
+		{
+			printf("RX & TX Samplerates must match\n");
+			return 1;
+		}
+	}
 
 	signal(2, hdlint);
 	if(do_sampling)
@@ -142,11 +150,13 @@ int main(int argc, char**argv)
 	if (dev_open(conf_path_in))
 		goto end;
 
-	if(do_rx)
-		dev_setup_rx(rx.frequency, rx.samplerate, chan, rx.osr, rx.lpfbw ? &rx.lpfbw : NULL, rx.gain);
-	if(do_tx)
-	{
-		dev_setup_tx(tx.frequency, tx.samplerate, chan, tx.osr, tx.lpfbw ? &tx.lpfbw:NULL, tx.gain);
+	if(do_tx&&do_rx)
+		dev_setup_both(&rx,&tx);
+	else{
+		if(do_tx)
+			dev_setup_tx(tx.frequency, tx.samplerate, chan, tx.osr, tx.lpfbw ? &tx.lpfbw:NULL, tx.gain);
+		if(do_rx)
+			dev_setup_rx(rx.frequency, rx.samplerate, chan, rx.osr, rx.lpfbw ? &rx.lpfbw:NULL, rx.gain);
 	}
 
 	if (get_config)

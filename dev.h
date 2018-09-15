@@ -27,5 +27,6 @@ void dev_stream_rx(rx_func_t hdlr, bool use_float);
 void dev_get_config(void);
 int dev_save_config(char *path);
 int dev_parse_args(char*str, dev_arg_t *args);
+int dev_setup_both(dev_arg_t *tx, dev_arg_t *rx);
 
 #endif
