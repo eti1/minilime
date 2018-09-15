@@ -372,7 +372,7 @@ int dev_parse_args(char*str, dev_arg_t *args)
 			break;
 		if(!strncmp(arg,"freq",4))
 		{
-			args->frequency = strtod("2402e6", NULL);
+			args->frequency = strtod(val, NULL);
 		}
 		else if(!strncmp(arg,"sr",4))
 		{
