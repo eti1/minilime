@@ -9,8 +9,8 @@ all: lime_sample
 %.o: %.cpp
 	$(CC) $(INC) $(CFLAGS) -c -o $@ $^
 
-lime_sample: main.o dev.o
+lime_sample: src/main.o src/dev.o
 	$(LD) $(LDFLAGS) -o $@ $^
 
 clean:
-	rm lime_sample *.o
+	rm lime_sample src/*.o

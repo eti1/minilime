@@ -33,7 +33,7 @@ static int lms_error(void)
 
 void dev_set_rx_freq(double freq)
 {
-	if(LMS_SetLOFrequency(device, LMS_CH_RX, 0, freq) != 0)
+	if(LMS_SetClockFreq(device, LMS_CLOCK_SXR, freq) != 0)
 	{
 		lms_error();
 	}
@@ -53,8 +53,8 @@ void dev_set_samplerate(double sr, size_t oversample=1)
 
 void dev_get_config(void)
 {
-	double gain, freq, lpfbw_cur;
-	unsigned txrx, chan, numchan, numant, ant, curant;
+	double freq, lpfbw_cur;
+	unsigned gain, txrx, chan, numchan, numant, ant, curant;
 	char rtc;
 	lms_name_t ant_list[10];
 	lms_range_t range, lpfbw_range;
@@ -68,17 +68,17 @@ void dev_get_config(void)
 		){
 			lms_error();
 		}
-		printf("%cX: %d channel%s\n",
+		fprintf(stderr, "%cX: %d channel%s\n",
 			rtc, numchan, numchan>1?"s":"");
-		printf(" LO Freq range (Mhz): %.1f - %.1f, step=%.1f\n",
+		fprintf(stderr, " LO Freq range (Mhz): %.1f - %.1f, step=%.1f\n",
 			range.min/1e6, range.max/1e6, range.step/1e6);
-		printf(" LPF BW (MHz): range: %f - %f, step=%f\n",
+		fprintf(stderr, " LPF BW (MHz): range: %f - %f, step=%f\n",
 			lpfbw_range.min/1e6, lpfbw_range.max/1e6, lpfbw_range.step/1e6);
 		for(chan=0;chan<numchan;chan++)
 		{
-			printf("  channel %d:\n", chan);
+			fprintf(stderr, "  channel %d:\n", chan);
 
-			if(-1==LMS_GetNormalizedGain(device, txrx, chan, &gain)
+			if(-1==LMS_GetGaindB(device, txrx, chan, &gain)
 			||-1==LMS_GetLOFrequency(device, txrx, chan, &freq)
 			||(unsigned)-1==(numant=LMS_GetAntennaList(device, txrx, chan, ant_list))
 			||(unsigned)-1==(curant=LMS_GetAntenna(device, txrx,chan))
@@ -87,16 +87,16 @@ void dev_get_config(void)
 				lms_error();
 			}
 
-			printf("    LO Frequency: %f\n", freq);
-			printf("    LPF BW (Mhz): %f\n", lpfbw_cur/1e6);
-			printf("    Normalized gain: %f\n", gain);
-			printf("    Antennas:\n");
+			fprintf(stderr, "    LO Frequency: %f\n", freq);
+			fprintf(stderr, "    LPF BW (Mhz): %f\n", lpfbw_cur/1e6);
+			fprintf(stderr, "    Gain dB: %d\n", gain);
+			fprintf(stderr, "    Antennas:\n");
 			for(ant=0;ant<numant;ant++)
 			{
-				printf(	"      %s%s:\n", ant_list[ant],ant==curant?" (current)":"");
+				fprintf(stderr, 	"      %s%s:\n", ant_list[ant],ant==curant?" (current)":"");
 				if (-1==LMS_GetAntennaBW(device, txrx, chan, ant, &range))
 					lms_error();
-				printf(	"        range (Mhz): %.1f - %.1f, step=%.1f\n", range.min/1e6,range.max/1e6,range.step/1e6);
+				fprintf(stderr, 	"        range (Mhz): %.1f - %.1f, step=%.1f\n", range.min/1e6,range.max/1e6,range.step/1e6);
 			}
 		}
 	}
@@ -106,7 +106,7 @@ int dev_setup_both(dev_arg_t *tx, dev_arg_t *rx)
 {
 	size_t ant_idx;
 	const unsigned chan = 0;
-	printf("Setup both rx & tx\n");
+	fprintf(stderr, "Setup both rx & tx\n");
 
 	/* Enable channel 0 RX */
 	if(-1==LMS_EnableChannel(device, false, chan, true))
@@ -120,10 +120,10 @@ int dev_setup_both(dev_arg_t *tx, dev_arg_t *rx)
 
 	if(rx->samplerate != tx->samplerate || rx->osr != tx->osr)
 	{
-		printf("Invalid samplerate configuration\n");
+		fprintf(stderr, "Invalid samplerate configuration\n");
 		return 1;
 	}
-	printf("Configure samplerate=%fMhz, osr=%d\n", rx->samplerate, tx->osr);
+	fprintf(stderr, "Configure samplerate=%fMhz, osr=%d\n", rx->samplerate, tx->osr);
 
 	/* Configure sample rate*/
 	if(LMS_SetSampleRate(device, rx->samplerate, rx->osr) != 0)
@@ -176,17 +176,17 @@ int dev_setup_both(dev_arg_t *tx, dev_arg_t *rx)
 #endif
 
 
-	printf("Configure RX LO %.3f Mhz\n", rx->frequency/1e6);
+	fprintf(stderr, "Configure RX LO %.3f Mhz\n", rx->frequency/1e6);
 	/* Configure RX LO Frequency */ 
-	if(LMS_SetLOFrequency(device, false, chan, rx->frequency) != 0)
+	if (LMS_SetClockFreq(device, LMS_CLOCK_SXR, rx->frequency) != 0)
 	{
 		lms_error();
 	}
 	
 #if (1) // defined(DOTX)
 	/* Configure TX LO Frequency */ 
-	printf("Configure TX LO %.3f Mhz\n", tx->frequency/1e6);
-	if(LMS_SetLOFrequency(device, true, chan, tx->frequency) != 0)
+	fprintf(stderr, "Configure TX LO %.3f Mhz\n", tx->frequency/1e6);
+	if (LMS_SetClockFreq(device, LMS_CLOCK_SXT, tx->frequency) != 0)
 	{
 		lms_error();
 	}
@@ -211,40 +211,47 @@ int dev_setup(bool dir_tx, double freq, double bw, unsigned chan=0, unsigned osr
 {
 	size_t ant_idx;
 	const char *dirstr=dir_tx?"TX":"RX";
+	double clockGenFreq;
 
-	printf("Enable %s channel 0\n", dirstr);
+	if (LMS_GetClockFreq(device, LMS_CLOCK_CGEN, &clockGenFreq) != 0){
+		fprintf(stderr, "Cannot get clock freq\n");
+	}
+	else{
+		fprintf(stderr, "Clock gen freq: %f\n", clockGenFreq);
+	}
+
+	/* Configure gain */
+	if (LMS_SetGaindB(device, dir_tx, chan, gain) != 0)
+	{
+		lms_error();
+	}
+
+	fprintf(stderr, "Enable %s channel 0\n", dirstr);
 
 	/* Enable channel 0 */
 	if(-1==LMS_EnableChannel(device, dir_tx, chan, true))
 		lms_error();
 	
-	printf("Configure %s LO %.3f Mhz\n", dirstr, freq/1e6);
+	fprintf(stderr, "Configure %s LO %.3f Mhz\n", dirstr, freq/1e6);
+
 	/* Configure LO Frequency */ 
-	if(LMS_SetLOFrequency(device, dir_tx, chan, freq) != 0)
+	if(LMS_SetClockFreq(device, dir_tx ? LMS_CLOCK_SXT : LMS_CLOCK_SXR, freq) != 0)
 	{
 		lms_error();
 	}
 
 	/* Configure sample rate*/
-	if(LMS_SetSampleRate(device, bw, osr) != 0)
+	if(LMS_SetSampleRateDir(device, dir_tx, bw, osr) != 0)
 	{
 		lms_error();
 	}
 
-	if (lpf != NULL)
-	{
-		/* Configure Low-Pass Filter */
-		if(	LMS_SetLPFBW(device, dir_tx, chan, *lpf) != 0
-		){
-			lms_error();
-		}
-	}
 
 	/* Configure analog low-pass filter */
-	if (LMS_SetLPF(device, dir_tx, chan, lpf != NULL) != 0)
-	{
-		lms_error();
-	}
+//	if (LMS_SetLPF(device, dir_tx, chan, lpf != NULL) != 0)
+//	{
+//		lms_error();
+//	}
 
 	/* Configure antenna path (FIXME ?)*/
 	if (dir_tx)
@@ -255,14 +262,8 @@ int dev_setup(bool dir_tx, double freq, double bw, unsigned chan=0, unsigned osr
 	{
 		ant_idx = (freq > 1e9) ? 1 : 3;
 	}
-	printf("Selecting %s antenna path %lu\n", dirstr, ant_idx);
+	fprintf(stderr, "Selecting %s antenna path %lu\n", dirstr, ant_idx);
 	if (LMS_SetAntenna(device, dir_tx, chan, ant_idx) != 0)
-	{
-		lms_error();
-	}
-
-	/* Configure gain */
-	if (LMS_SetNormalizedGain(device, dir_tx, chan, gain) != 0)
 	{
 		lms_error();
 	}
@@ -272,7 +273,15 @@ int dev_setup(bool dir_tx, double freq, double bw, unsigned chan=0, unsigned osr
 	{
 		lms_error();
 	}
-	printf("%s configured\n", dirstr);
+	if (lpf != NULL)
+	{
+		/* Configure Low-Pass Filter */
+		if(	LMS_SetLPFBW(device, dir_tx, chan, *lpf) != 0
+		){
+			lms_error();
+		}
+	}
+	fprintf(stderr, "%s configured\n", dirstr);
 
 	return 0;
 }
@@ -295,8 +304,6 @@ int dev_save_config(char *path)
 int dev_open(char *conf_path)
 {
 	int n;
-	struct stat st;
-	char *home, path[256];
 
 	lms_info_str_t list[8];
 	if ((n=LMS_GetDeviceList(list)) < 0)
@@ -305,36 +312,23 @@ int dev_open(char *conf_path)
 	}
 	if (!n)
 	{
-		printf("No device found.\n");
+		fprintf(stderr, "No device found.\n");
 		return 1;
 	}
 	else if (n > 1)
 	{
-		printf("%d devices found. Selecting first.\n", n);
+		fprintf(stderr, "%d devices found. Selecting first.\n", n);
 	}
 	if (LMS_Open(&device, list[0], NULL))
 	{
 		lms_error();
 	}
-	
-	if (!conf_path)
-	{
-		if (!(home = getenv("HOME"))||*home=='\0'
-			||(unsigned)snprintf(path, sizeof(path), "%s/%s", home, CONF_PATH)>=sizeof(path)
-			||-1 == stat(path, &st))
-		{
-			printf("Cannot open config in ~/%s\n", CONF_PATH);
-			return 1;
-		}
-		conf_path = path;
-	}
-	printf("Loading config '%s'\n", conf_path);
-	if (LMS_LoadConfig(device, conf_path) != 0)
+	if (LMS_Init(device))
 	{
 		lms_error();
 	}
-
-	printf("Device opened\n");
+	
+	fprintf(stderr, "Device opened\n");
 	return 0;
 	
 }
@@ -346,7 +340,6 @@ int dev_cleanup(void)
 		LMS_StopStream(&sc);
 		stream_started = 0;
 	}
-	printf("Closing device\n");
 	if (device)
 		 LMS_Close(device);
 	return 0;
@@ -384,31 +377,31 @@ int dev_parse_args(char*str, dev_arg_t *args)
 		}
 		else if(!strcmp(arg,"gain"))
 		{
-			args->gain = strtod(val, NULL);
+			args->gain = strtoul(val, NULL,10);
 		}
 		else if(!strcmp(arg,"osr"))
 		{
 			args->osr = strtol(val, NULL, 10);
 		}
 		else{
-			printf("Invalid argument %s\n", arg);
+			fprintf(stderr,"Invalid argument %s\n", arg);
 			return 1;
 		}
 	}
 
-	if (args->samplerate < 2.5e6 || args->osr * args->samplerate > 30.72e6 || args->osr*args->samplerate <= 0)
+	if (args->samplerate < 2.5e6 || args->samplerate > 30.72e6 || args->osr*args->samplerate <= 0)
 	{
-		printf("Invalid samplerate %f specified\n", args->samplerate);
+		fprintf(stderr,"Invalid samplerate %f specified\n", args->samplerate);
 		return 1;
 	}
 	if (args->lpfbw < 0 || args->lpfbw > args->samplerate)
 	{
-		printf("Invalid low-pass filter bandwidth\n");
+		fprintf(stderr,"Invalid low-pass filter bandwidth\n");
 		return 1;
 	}
 	if (args->frequency < 100e6 || args->frequency > 3.8e9)
 	{
-		printf("Frequency not in range 100Mhz-3.8Ghz\n");
+		fprintf(stderr,"Frequency not in range 100Mhz-3.8Ghz\n");
 		return 1;
 	}
 	return 0;
@@ -421,7 +414,7 @@ void dev_stream_rx(rx_func_t hdlr, bool use_float)
 	unsigned sample_size = 2*(use_float?sizeof(float):sizeof(int16_t));
 	void *buffer = malloc(sample_size*DEV_BUFCOUNT);
 
-	printf("dev_stream_rx\n");
+	fprintf(stderr,"dev_stream_rx\n");
 
 	sc.channel = 0;							// channel number
 	sc.fifoSize = 1024*1024;				// fifo sample count
@@ -457,7 +450,7 @@ void dev_stream_rx(rx_func_t hdlr, bool use_float)
 			auto t3 = t2 - start_time;
 			double runtime = (double)(chrono::duration_cast<chrono::microseconds>(t3).count());
 
-			printf("Run time: %.2f sec (%.2f msps) \n",
+			fprintf(stderr, "Run time: %.2f sec (%.2f msps) \n",
 				runtime/1e6, (double)sample_count / runtime);
 		//	LMS_StopStream(&sc);
 			free(buffer);

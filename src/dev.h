@@ -11,7 +11,7 @@
 typedef struct dev_arg_s {
 	double frequency;
 	double samplerate;
-	double gain;
+	unsigned gain;
 	double lpfbw;
 	unsigned osr;
 } dev_arg_t;

@@ -14,13 +14,15 @@
 
 static int out_fd = -1;
 static unsigned long num_samples = 0;
-static bool use_float = true;
+static bool use_float = false;
 
 void open_out(char *name)
 {
-	if ((out_fd = open(name, O_WRONLY|O_CREAT|O_TRUNC, 0666))==-1)
+	if (!strcmp(name,"-"))
+		out_fd = 1; 
+	else if ((out_fd = open(name, O_WRONLY|O_CREAT|O_TRUNC, 0666))==-1)
 	{
-		printf("Cannot write %s\n", name);
+		fprintf(stderr, "Cannot write %s\n", name);
 		dev_cleanup();
 		exit(1);
 	}
@@ -42,7 +44,7 @@ int write_outbuf(void *inp, size_t cnt)
 
 void (hdlint)(int __attribute__((unused)) n)
 {
-	printf("Interrupted.\n");
+	fprintf(stderr, "Interrupted.\n");
 	close(out_fd);
 	dev_cleanup();
 	exit(0);
@@ -63,10 +65,10 @@ static struct option long_options[] = {
 void usage(char*s)
 {
 	unsigned i;
-	printf("Usage: %s -R/-T freq=2400e6,sr=10e6,lpf=8e6,osr=1,gain=0.7 [options]\n", s);
+	fprintf(stderr, "Usage: %s -R/-T freq=2400e6,sr=10e6,lpf=8e6,osr=1,gain=30 [options]\n", s);
 	for(i=0;i<ARRAY_SIZE(long_options);i++)
 	{
-		printf("  -%c --%s\n", long_options[i].val, long_options[i].name);
+		fprintf(stderr, "  -%c --%s\n", long_options[i].val, long_options[i].name);
 	}
 	exit(1);
 }
@@ -120,7 +122,7 @@ int main(int argc, char**argv)
 				usage(*argv);
 			}
 			
-			printf("%cX args: freq: %.f, bw: %.f, gain: %f, lpf: %f, osr: %d\n",
+			fprintf(stderr, "%cX args: freq: %.f, bw: %.f, gain: %d, lpf: %f, osr: %d\n",
 				c,args->frequency,args->samplerate,args->gain, args->lpfbw, args->osr);
 			break;
 		case '?': case 'h':
@@ -138,7 +140,7 @@ int main(int argc, char**argv)
 	{
 		if (tx.samplerate != rx.samplerate)
 		{
-			printf("RX & TX Samplerates must match\n");
+			fprintf(stderr, "RX & TX Samplerates must match\n");
 			return 1;
 		}
 	}
@@ -166,7 +168,7 @@ int main(int argc, char**argv)
 	if (conf_path_out)
 	{
 		dev_save_config(conf_path_out);
-		printf("Config saved to %s\n", conf_path_out);
+		fprintf(stderr, "Config saved to %s\n", conf_path_out);
 		free(conf_path_out);
 	}
 
@@ -175,7 +177,7 @@ int main(int argc, char**argv)
 		dev_stream_rx(write_outbuf, use_float);
 	}
 end:
-	if(do_sampling)
+	if(do_sampling )
 		close(out_fd);
 	dev_cleanup();
 
